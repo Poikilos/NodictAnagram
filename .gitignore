@@ -103,3 +103,10 @@ venv.bak/
 # mypy
 .mypy_cache/
 /prev-NoDictAnagram-list.txt
+
+# system-generated stuff
+.directory
+
+# see https://github.com/github/gitignore/blob/master/Global/Kate.gitignore
+.*.kate-swp
+.swp.*
