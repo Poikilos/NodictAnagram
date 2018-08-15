@@ -243,6 +243,7 @@ class AnagramGen:
         self.allow_old_words = False
         self.use_fake_words = True
         self.use_dictionary = False
+        self.last_run_s = None
 
         if hunspell_enable:
             hunspell_sub = os.path.join('hunspell_dicts', 'en_US')
@@ -450,7 +451,7 @@ class AnagramGen:
 
         self.total_perms = 0
         for version in self.spacings:
-            print("#  " + version)
+            print("#  '" + version + "'")
             self.total_perms += npermutations(version)
 
         print("#permutations: " + str(self.total_perms))
@@ -719,8 +720,12 @@ class AnagramGen:
                 step_count += 1
         etaLabel['text'] = ""
 
-        show_overview("done (checked:" + str(step_count) +
-                      " kept:" + str(keep_count) + ")!")
+        if not self.cancel:
+            self.last_run_s = get_second() - start_time
+            show_overview("done in " +
+                          "{0:.2f}".format(self.last_run_s) +
+                          "s (checked:" + str(step_count) +
+                          " kept:" + str(keep_count) + ")!")
 
 if __name__ == "__main__":
     ag = AnagramGen()
@@ -770,7 +775,6 @@ if __name__ == "__main__":
         for msgLabel in msgLabels:
             msgLabel.pack_forget()
         msgLabels = []
-
 
     def show_overview(msg):
         msgLabel = Label(frame, text=msg)
