@@ -1,0 +1,7 @@
+
+
+census-derived-all-first
+http://deron.meranda.us/data/census-derived-all-first.txt
+
+dist.all.last
+https://www2.census.gov/topics/genealogy/1990surnames/dist.all.last

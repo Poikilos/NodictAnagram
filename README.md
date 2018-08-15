@@ -1,5 +1,5 @@
 # NodictAnagram
-A anagram generator (and finder/solver) with some fake words and other weird things allowed, for Python 3. 
+A anagram generator (and finder/solver) with some fake words and other weird things allowed, for Python 3.
 
 ## Licenses
 * Code:
@@ -50,3 +50,10 @@ ETA after 35s for my name is 8.25 days
 * list
 ETA after 35s for my name is 7.61 days
 `if word in words`
+
+## Known Issues
+* add checkbox for ag.allow_old_words, ag.use_fake_words (True by default), ag.use_dictionary
+
+* add word lists from http://www.outpost 9
+  .co m/fi les/W ordLists.html
+* add name lists from http://mbejda.github.io/

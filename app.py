@@ -25,6 +25,9 @@ except:
     print("sudo python3 -m pip install cuckoofilter")
     pass
 
+cf_enable = False  # False since hasn't been working
+print("# cuckoofilter disabled manually due to not working")
+print("# (should never get false negatives, but does)")
 
 
 hunspell_enable = False
@@ -64,7 +67,8 @@ except ImportError:  # Python 3
     from tkinter import *
 
 def npermutations(l):
-    # see https://stackoverflow.com/questions/16453188/counting-permuations-in-python
+    # see https://stackoverflow.com/questions/16453188/\
+    # counting-permuations-in-python
     num = math.factorial(len(l))
     mults = Counter(l).values()
     den = reduce(operator.mul, (math.factorial(v) for v in mults), 1)
@@ -88,34 +92,41 @@ def get_second():
 
 class SpellFake:
     def __init__(self):
-        self.words = []
-        self.words_set = None
-        self.cf = None
+        self._words = []
+        self._words_set = None
+        self._cf = None
+        self._w_dict = {}
+        self._baked = False
+
+    def get_is_baked(self):
+        return self._baked
 
     def spell(self, word):
         raise RuntimeError("Could not finish SpellFake spell--"
                            "you must call SpellFake bake at least once")
+    def spell_d_hash(self, w):
+        return self._w_dict.get(w) is True
 
-    def spell_binary(self, w):
+    def spell_bisect(self, w):
         # if you got an exception, try running self.fspell.bake()
         # at least once before calling this (not automatic
         # for performance reasons)
-        # if word in self.words:
+        # if word in self._words:
             # return True
         # return False
-        return binary_search(self.words, w) >= 0  # must be sorted
+        return binary_search(self._words, w) >= 0  # must be sorted
 
     def spell_cuckoo(self, w):
-        self.cf.contains(w)
+        self._cf.contains(w)
 
     def bake(self):
-        old = self.words
-        self.words = []
+        old = self._words
+        self._words = []
         print("#adding unique words...")
         unique = {}
         for word in old:
             word_lower = word.lower().strip()
-            #if word_lower not in self.words:
+            #if word_lower not in self._words:
             if " " in word_lower:
                 print("#WARNING in bake: " + str(word_lower) +
                       "has spaces so splitting")
@@ -125,27 +136,32 @@ class SpellFake:
                         unique[subw_strip] = True
             else:
                 unique[word_lower] = True
-        self.words = list(unique)
-        self.words = sorted(self.words)
-        self.words_set = set(self.words)
-        print("#using " + str(len(self.words)) + " words")
+        self._words = list(unique)
+        self._w_dict = unique
+        self._words = sorted(self._words)
+        self._words_set = set(self._words)
+        print("#using " + str(len(self._words)) + " words")
         if cf_enable:
-            self.cf = cuckoofilter.CuckooFilter(
-                capacity=len(self.words),
+            self._cf = cuckoofilter.CuckooFilter(
+                capacity=len(self._words),
                 fingerprint_size=1)
             print("# Filling cuckoo filter...")
-            for word in self.words:
-                self.cf.insert(word)
+            for word in self._words:
+                self._cf.insert(word)
             print("#   done (cuckoo filter ready)")
             self.spell = self.spell_cuckoo
         else:
-            self.spell = spell_binary
+            # self.spell = self.spell_bisect
+            # print("#SpellFake is using method: spell_bisect")
+            self.spell = self.spell_d_hash
+            print("#SpellFake is using method: spell_d_hash")
         tmp_name = "prev-NoDictAnagram-list.txt"
         outs = open(tmp_name, 'w')
-        for word in self.words:
+        for word in self._words:
             outs.write(word + "\n")
         outs.close()
-        print("wrote " + tmp_name)
+        print("#wrote " + tmp_name)
+        self._baked = True
 
     def _get_list(self, path, allow_abbreviations=False,
                     allow_acronyms=False):
@@ -189,12 +205,16 @@ class SpellFake:
             allow_acronyms=allow_acronyms
         )
         if results is not None:
-            self.words.extend(results)
+            print("# SpellFake ADDED '" + path + "'")
+            self._baked = False
+            self._words.extend(results)
 
     def append_fixed_width_col(self, path, start, width):
         results = self._get_fixed_width_col(path, start, width)
         if results is not None:
-            self.words.extend(results)
+            print("# SpellFake ADDED '" + path + "'")
+            self._baked = False
+            self._words.extend(results)
 
     def _get_fixed_width_col(self, path, start, width):
         ret = None
@@ -214,11 +234,15 @@ class SpellFake:
 
 class AnagramGen:
     def __init__(self):
-        self.cancel = False
-        self.set_root_data_path(
-            os.path.dirname(os.path.realpath(__file__)))
-        # above sets self.root_data_path and self.data_paths
 
+        self.cancel = False
+        self.set_root_data_path(os.path.join(
+            os.path.dirname(os.path.realpath(__file__)), 'data'))
+        # above sets self.root_data_path and self.data_paths
+        self.all_must_be_words = False
+        self.allow_old_words = False
+        self.use_fake_words = True
+        self.use_dictionary = False
 
         if hunspell_enable:
             hunspell_sub = os.path.join('hunspell_dicts', 'en_US')
@@ -258,28 +282,34 @@ class AnagramGen:
         #   result = self.hspell.spell('Spooky')  # True
         # * add entry: self.hspell.add('spookie')
         # * remove entry: self.hspell.remove('spookie')
-        # * get correct spellings suggestion list: self.hspell.suggest('spookie')
-        # * other usage (analyze, stem): https://github.com/blatinier/pyhunspell
+        # * get correct spellings suggestion list:
+        #   self.hspell.suggest('spookie')
+        # * other usage (analyze, stem):
+        #   https://github.com/blatinier/pyhunspell
 
         self.fspell = SpellFake()
-        lasts_name = 'dist.all.last'
+        lasts_name = os.path.join('census',
+                                  'dist.all.last')
         lasts_path = self.resource_find(lasts_name)
         if lasts_path is not None:
             self.fspell.append_fixed_width_col(lasts_path, 0, 14)
         else:
             print("#WARNING in AnagramGen init: missing " + lasts_name)
-        print("#len(self.fspell.words): " + str(len(self.fspell.words)))
+        print("#len(self.fspell._words): " +
+              str(len(self.fspell._words)))
 
-        firsts_name = 'census-derived-all-first.txt'
+        firsts_name = os.path.join('census',
+                                   'census-derived-all-first.txt')
         firsts_path = self.resource_find(firsts_name)
         if firsts_path is not None:
             self.fspell.append_fixed_width_col(firsts_path, 0, 14)
         else:
             print("#WARNING in AnagramGen init: missing " + firsts_name)
-        print("#len(self.fspell.words): " + str(len(self.fspell.words)))
+        print("#len(self.fspell._words): " +
+              str(len(self.fspell._words)))
 
-        unusual_name = ("app.aspell.net-size=95-American" +
-                        "-seldom-stripped-hacker.txt")
+        unusual_name = os.path.join('app.aspell.net',
+            "size=95-American-seldom-stripped-hacker.txt")
         unusual_path = self.resource_find(unusual_name)
         if unusual_path is not None:
             self.fspell.append_list(unusual_path)
@@ -290,47 +320,66 @@ class AnagramGen:
         self.total_perms = None
         self.spacings = None
         self.old_words = None
-        self.block_3_char_words = []
-        self.block_4_char_words = []
-        self.block_other_words = []  # NOT YET IMPLEMENTED
-        block_name = 'blocked.txt'
-        block_path = self.resource_find(block_name)
-        if block_path is not None:
-            ins = open(block_path, 'r')
-            line = True
-            while line:
-                line = ins.readline()
-                if line:
-                    line_strip = line.strip()
-                    if len(line_strip) == 4:
-                        self.block_4_char_words.append(line_strip)
-                    elif len(line_strip) == 3:
-                        self.block_3_char_words.append(line_strip)
-                    elif len(line_strip) > 0:
-                        self.block_other_words.append(line_strip)
-            if len(self.block_other_words) > 0:
-                print("#WARNING: self.block_other_words" +
-                      "(length " + str(len(self.block_other_words)) +
-                      ") is not yet implemented.")
-            print("#block 3-letter list length: " +
-                  str(len(self.block_3_char_words)))
-            print("#block 4-letter list length: " +
-                  str(len(self.block_4_char_words)))
-            ins.close()
-        else:
-            print("#WARNING in AnagramGen init: missing '" + block_name +
-                  "'")
+        self.one_char_words = ['a', 'i']
+        # aka 2_letter aka two_letter:
+        self.two_char_words = ['is', 'vs', 'as', 'so', 'at', 'my', 'or']
+        # self.block_3_char_words = []
+        # self.block_4_char_words = []
+        # self.block_other_words = []
+        self.b_dict = {}
+        block_paths = []
+        block_paths.append("offensive.txt")
+        block_paths.append("useless.txt")
+        block_paths.append(os.path.join("block_more", "offensive.1"))
+        block_paths.append(os.path.join("block_more", "offensive.2"))
+        block_paths.append(os.path.join("block_more", "profane.1"))
+        block_paths.append(os.path.join("block_more", "profane.3"))
+        # print("using block lists: " + str(block_paths))
+        for block_name in block_paths:
+            block_path = self.resource_find(block_name)
+            if block_path is not None:
+                ins = open(block_path, 'r')
+                line = True
+                while line:
+                    line = ins.readline()
+                    if line:
+                        line_strip = line.strip()
+                        # if len(line_strip) == 4:
+                            # self.block_4_char_words.append(line_strip)
+                        # elif len(line_strip) == 3:
+                            # self.block_3_char_words.append(line_strip)
+                        # elif len(line_strip) > 0:
+                            # self.block_other_words.append(line_strip)
+                        if len(line_strip) > 0:
+                            self.b_dict[line_strip] = True
+                # if len(self.block_other_words) > 0:
+                    # print("#WARNING: self.block_other_words" +
+                          # "(length " +
+                          # str(len(self.block_other_words)) +
+                          # ") is not yet implemented.")
+                # print("#block 3-letter list length: " +
+                      # str(len(self.block_3_char_words)))
+                # print("#block 4-letter list length: " +
+                      # str(len(self.block_4_char_words)))
+                ins.close()
+            else:
+                print("#WARNING in AnagramGen init: missing '" +
+                      block_name + "'")
+        print("#block list length: " +
+              str(len(list(self.b_dict))))
+        # self.block_set = set(list(self.b_dict))
 
     def set_root_data_path(self, path):
         self.root_data_path = path
         self._regenerate_data_paths()
 
     def _regenerate_data_paths(self):
-        self.data_paths = ['.', self.root_data_path]
+        self.data_paths = ['./data', self.root_data_path]
                            # os.path.join(self.root_data_path, 'words')]
 
     def resource_find(self, sub_path):
         try_path = None
+        tried = []
         for this_data_path in self.data_paths:
             if this_data_path != ".":
                 try_path = os.path.join(this_data_path, sub_path)
@@ -338,6 +387,9 @@ class AnagramGen:
                 try_path = sub_path
             if os.path.isfile(try_path):
                 return try_path
+            else:
+                tried.append(try_path)
+        print("#tried " + str(tried))
         return None
 
     def generate_meta(self, answer):
@@ -402,66 +454,83 @@ class AnagramGen:
             self.total_perms += npermutations(version)
 
         print("#permutations: " + str(self.total_perms))
-        self.total_perms *= 2  # not sure why this is needed
+        # self.total_perms *= 2  # not sure why was needed or worked
         print("#effective permutations: " + str(self.total_perms))
 
     #for s in itertools.permutations(answer_strip_lower):
     #    ok = True
     #    print(s)
 
-    def is_dic_word(self, w, one_char_words=[],
-                    two_char_words=[]):
+    def is_dic_word(self, word):
         ret = False
-        """Check if is dictionary word, with given exceptions.
-        (uses params and the following class members:
-        self.block_3_char_words, self.block_4_char_words)
-
-        Keyword arguments:
-        one_char_words -- This is only used if use_fake_words
-                            is True. When len(candidate) is 1, only allow
-                            the word to be a word if in this list.
-                            If this is None, the check is not done.
-        two_char_words -- Causes same behavior as one_char_words except
-                          when len(candidate) is 2.
-
+        """Check if is dictionary word.
         """
-        if (len(w) > 0) and (self.hspell.spell(w)):
-            if len(w) == 1:
-                if one_char_words is not None:
-                    if w in one_char_words:
+
+        # ONLY use 1 or 2 char words if on list!
+        if (len(word) > 0) and (self.hspell.spell(word)):
+            if len(word) == 1:
+                if self.one_char_words is not None:
+                    if word in self.one_char_words:
                         ret = True
                 else:
                     ret = True
-            elif len(w) == 2:
-                if two_char_words is not None:
-                    if w in two_char_words:
-                        ret = True
-                else:
-                    ret = True
-            elif len(w) == 3:
-                if self.block_3_char_words is not None:
-                    if w not in self.block_3_char_words:
-                        ret = True
-                else:
-                    ret = True
-            elif len(w) == 4:
-                if self.block_4_char_words is not None:
-                    if w not in self.block_4_char_words:
+            elif len(word) == 2:
+                if self.two_char_words is not None:
+                    if word in self.two_char_words:
                         ret = True
                 else:
                     ret = True
             else:
+                # if self.b_dict.get(word) is not True:
                 ret = True
         return ret
 
     def is_fake_word(self, word):
-        return self.fspell.spell(word)
-
-    def is_fake_word(self, word):
-        return self.fspell.spell(word)
+        """Check if is fake word.
+        """
+        ret = False
+        if len(word) == 1:
+            if self.one_char_words is not None:
+                if word in self.one_char_words:
+                    ret = True
+            else:
+                ret = True
+        elif len(word) == 2:
+            if self.two_char_words is not None:
+                if word in self.two_char_words:
+                    ret = True
+            else:
+                ret = True
+        else:
+            ret = True
+        if ret:
+            ret = self.fspell.spell(word)
+        return ret
 
     def is_word(self, word):
-        return self.is_dic_word(word) or self.is_fake_word(word)
+        """Check if is dictionary word or fake word.
+        Skips one- and two-letter words not in self.one_char_words
+        (if not None) or self.two_char_words (if not None),
+        respectively.
+        """
+        ret = False
+        if len(word) == 1:
+            if self.one_char_words is not None:
+                if word in self.one_char_words:
+                    ret = True
+            else:
+                ret = True
+        elif len(word) == 2:
+            if self.two_char_words is not None:
+                if word in self.two_char_words:
+                    ret = True
+            else:
+                ret = True
+        else:
+            ret = True
+        if ret:
+            ret = self.is_dic_word(word) or self.is_fake_word(word)
+        return ret
 
     # def always_true(word):
         # return True
@@ -469,28 +538,30 @@ class AnagramGen:
     def stop(self):
         self.cancel = True
 
-    def start(self, callback_pb, allow_original_words=False,
-              use_fake_words=True, use_dictionary=False,
-              all_must_be_words=False):
+    def start(self, callback_pb):
         self.cancel = False
         """Start printing anagrams to standard output
-        allow_original_words -- if True, allow word or word from phrase
+
+        uses:
+        self.use_fake_words -- use included list of words and names
+        self.use_dictionary -- use hunspell dictionary if available
+        self.allow_old_words -- if True, allow word or word from phrase
                                 given originally by user
-        use_fake_words -- use included list of words and names
-        use_dictionary -- use hunspell dictionary if available
-        all_must_be_words -- Only keep the anagram if all words in the
+        self.all_must_be_words -- Only keep the anagram if all words in the
                              anagram are actually words (requires
                              use_fake_words or use_dictionary or both).
         """
         answer = e.get()
-        self.fspell.bake()
+        if not self.fspell.get_is_baked():
+            self.fspell.bake()
         print("# AnagramGen start")
+        print("# all_must_be_words: " + str(self.all_must_be_words))
         self.generate_meta(answer)
         callback_pb['value'] = 0
         callback_pb['maximum'] = self.total_perms
         # root.update_idletasks()
         # callback_pb["value"] += 1
-        if not allow_original_words:
+        if not self.allow_old_words:
             show_overview("* excluding results containing old words: " +
                   str(self.old_words))
         show_overview("* there are " +
@@ -510,16 +581,20 @@ class AnagramGen:
         eta_number = 1
         gen_count = None
         good_count = None
+        use_dictionary = self.use_dictionary
         if self.hspell is None:
             use_dictionary = False
         check_method = None
         check_any = True
-        if use_dictionary and use_fake_words:
+        if use_dictionary and self.use_fake_words:
             check_method = self.is_word
+            print("#using check method: is_word")
         elif use_dictionary:
             check_method = self.is_dic_word
-        elif use_fake_words:
+            print("#using check method: is_dic_word")
+        elif self.use_fake_words:
             check_method = self.is_fake_word
+            print("#using check method: is_fake_word")
         else:
             check_any = False
             show_overview("* not limiting to words (no use_dictionary,"
@@ -545,7 +620,7 @@ class AnagramGen:
                         s += c
                     prev_c = c
                 keep = True
-                if not allow_original_words:
+                if not self.allow_old_words:
                     for word in self.old_words:
                         if word in s:
                             keep = False
@@ -553,21 +628,23 @@ class AnagramGen:
                 if keep:
                     if check_any:
                         found_words = s.split(" ")
-                        if all_must_be_words:
+                        if self.all_must_be_words:
                             gen_count = len(found_words)
                             good_count = 0
                             for w in found_words:
                                 if check_method(w):
-                                    found_w = w
-                                    good_count += 1
+                                    if not (self.b_dict.get(w) is True):
+                                        found_w = w
+                                        good_count += 1
                             if good_count < gen_count:
                                 keep = False
                         else:
                             for w in found_words:
                                 if check_method(w):
-                                    found_w = w
-                                    good_count = 1
-                                    break
+                                    if not (self.b_dict.get(w) is True):
+                                        found_w = w
+                                        good_count = 1
+                                        break
 
                             if found_w is None:
                                 keep = False
@@ -649,8 +726,11 @@ if __name__ == "__main__":
     ag = AnagramGen()
     root = Tk()
     anagram_t = None
-
+    msgLabels = []
+    allWordsVar = None
+    allWordsCB = None
     def start(pb):
+        remove_overview_labels()
         ag.start(pb)
         stopButton.pack_forget()
         beginButton.pack()
@@ -670,16 +750,32 @@ if __name__ == "__main__":
         global anagram_t
         beginButton.pack_forget()
         stopButton.pack()
-        anagram_t = threading.Thread(target=start, args=(pb,))
+        print("#allWordsVar: " + str(allWordsVar.get()))
+        # print("#allWordsCB: " + str(allWordsCB))
+        # print("#allWordsCB['on']: " + allWordsCB['on'])  # unreliable
+        # all_enable = (allWordsCB['on'] == '1') # unreliable
+        all_enable = (allWordsVar.get() == 1)
+        print("all_enable: " + str(all_enable))
+        ag.all_must_be_words = all_enable
+        anagram_t = threading.Thread(target=start,
+            args=(pb,))
         anagram_t.start()
 
     def quit():
         global root
         root.destroy()
 
+    def remove_overview_labels():
+        global msgLabels
+        for msgLabel in msgLabels:
+            msgLabel.pack_forget()
+        msgLabels = []
+
+
     def show_overview(msg):
         msgLabel = Label(frame, text=msg)
-        msgLabel.pack()
+        msgLabel.pack(side=BOTTOM)
+        msgLabels.append(msgLabel)
 
     # frame = Frame(root, highlightbackground="yellow",
     #                    highlightcolor="red", highlightthickness=4,
@@ -713,9 +809,16 @@ if __name__ == "__main__":
     # e.delete(0, END)
     # e.insert(END, 'is mud')
     # e.insert(END, 'far flung')
-    #e.insert(END, 'hangry cat')
-    e.insert(END, 'Jake Gustafson')
+    # e.insert(END, 'hangry cat')
+    # e.insert(END, 'Jake Gustafson')
+    e.insert(END, 'Sheo Epeopl')
     e.pack()
+
+    allWordsVar = IntVar()
+    allWordsCB = Checkbutton(frame, text="All chunks must be words",
+                             variable=allWordsVar)
+    # .grid(row=0, sticky=W)
+    allWordsCB.pack()
 
     beginButton = Button(
         frame,
