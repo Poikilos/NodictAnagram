@@ -66,13 +66,34 @@ except ImportError:  # Python 3
     import tkinter.ttk as ttk
     from tkinter import *
 
-def npermutations(l):
+def ncombinations(l):
+    # see https://math.stackexchange.com/questions/1356027/\
+    # permutations-without-repetitions-exclude-repeated-permutations
+    unique = {}
+    for i in l:
+        s = str(i)
+        if s in unique:
+            unique[s] += 1
+        else:
+            unique[s] = 1
+    den = 0
+    for k,v in unique.items():
+        den += math.factorial(v)
+    num = math.factorial(len(l))
+    return num / den
+
+def n_u_permutations(l):
+    # unique only (permutations ignoring duplicates)
     # see https://stackoverflow.com/questions/16453188/\
     # counting-permuations-in-python
     num = math.factorial(len(l))
     mults = Counter(l).values()
     den = reduce(operator.mul, (math.factorial(v) for v in mults), 1)
     return num / den
+
+def n_permutations(l):
+    # permutations (including duplicates)
+    return math.factorial(len(l))
 
 def binary_search(l, needle, lo=0, hi=None):
     """can't use 'l' to specify default for hi
@@ -232,6 +253,31 @@ class SpellFake:
             ins.close()
         return ret
 
+def anagrams(s):
+    unique = {}
+    for c in s:
+        if unique.get(c) is not None:
+            unique[c] += 1
+        else:
+            unique[c] = 1
+    l = []
+    indices = []
+    i = 0
+    for k,v in unique.items():
+        indices.append(i)
+        l.append({'k':k, 'v':v})
+        i += 1
+    for order in itertools.permutations(indices):
+        result = ""
+        for i in order:
+            count = l[i]['v']
+            c = l[i]['k']
+            # TODO: not finished yet--dups are always together
+            for i in range(count):
+                result += c
+        yield result
+
+
 class AnagramGen:
     def __init__(self):
 
@@ -318,7 +364,8 @@ class AnagramGen:
             print("#WARNING in AnagramGen init: missing " +
                   unusual_name)
 
-        self.total_perms = None
+        self.total_permus = None
+        self.total_combos = None
         self.spacings = None
         self.old_words = None
         self.one_char_words = ['a', 'i']
@@ -418,6 +465,7 @@ class AnagramGen:
             chunks.append(w)
             i += 1
 
+
         for spacing in itertools.permutations(chunks):
             spacing_s = ""
             prev_s = None
@@ -434,6 +482,9 @@ class AnagramGen:
             self.unique[spacing_s.strip()] = True
 
         self.spacings = list(self.unique)
+
+
+
         # for remove_count in range(len(spaces)):
             # result = answer_strip_lower
             # count = 0
@@ -449,14 +500,17 @@ class AnagramGen:
               " only quantity, since spaces will be rearranged along"
               " with characters):")
 
-        self.total_perms = 0
+        self.total_permus = 0
+        self.total_combos = 0
         for version in self.spacings:
             print("#  '" + version + "'")
-            self.total_perms += npermutations(version)
+            # self.total_permus += n_u_permutations(version)
+            self.total_permus += n_permutations(version)
+            self.total_combos += ncombinations(version)
 
-        print("#permutations: " + str(self.total_perms))
-        # self.total_perms *= 2  # not sure why was needed or worked
-        print("#effective permutations: " + str(self.total_perms))
+        print("#permutations ignoring duplicates: " +
+              str(self.total_permus))
+        print("#combinations: " + str(self.total_combos))
 
     #for s in itertools.permutations(answer_strip_lower):
     #    ok = True
@@ -485,6 +539,9 @@ class AnagramGen:
                 # if self.b_dict.get(word) is not True:
                 ret = True
         return ret
+
+    def is_blocked(self, word):
+        return self.b_dict.get(word) is True
 
     def is_fake_word(self, word):
         """Check if is fake word.
@@ -540,7 +597,6 @@ class AnagramGen:
         self.cancel = True
 
     def start(self, callback_pb):
-        self.cancel = False
         """Start printing anagrams to standard output
 
         Sequental arguments:
@@ -557,6 +613,8 @@ class AnagramGen:
                              anagram are actually words (requires
                              use_fake_words or use_dictionary or both).
         """
+        self.cancel = False
+        prev_result = None
         answer = e.get()
         if not self.fspell.get_is_baked():
             self.fspell.bake()
@@ -564,14 +622,17 @@ class AnagramGen:
         print("# all_must_be_words: " + str(self.all_must_be_words))
         self.generate_meta(answer)
         callback_pb['value'] = 0
-        callback_pb['maximum'] = self.total_perms
+        callback_pb['maximum'] = self.total_permus
         # root.update_idletasks()
         # callback_pb["value"] += 1
         if not self.allow_old_words:
             show_overview("* excluding results containing old words: " +
                   str(self.old_words))
         show_overview("* there are " +
-                      str(self.total_perms) +
+                      str(self.total_permus) +
+                      " possible permutations...")
+        show_overview("* there are " +
+                      str(self.total_combos) +
                       " possible combinations...")
         wait_count = 0
         max_wait_count = 8000
@@ -584,7 +645,7 @@ class AnagramGen:
         keep_count = 0
         prev_passed_h_i = None
         prev_passed_d_i = None
-        eta_number = 1
+        # eta_number = 1
         gen_count = None
         good_count = None
         use_dictionary = self.use_dictionary
@@ -607,23 +668,32 @@ class AnagramGen:
                   " no use_fake_words).")
             # check_method = self.always_true
 
-        show_overview("See console for results.")
-        big_dict = {}
+        # big_dict = {}  # not needed since not using permutations
         for version in self.spacings:
             if self.cancel:
                 return
             show_overview("finding anagrams of " + version + "...")
+            # show_overview("See console for results.")
+
+            # for s_tuple in itertools.product(version,
+                                             # repeat=len(version)):
+            # for s_tuple in anagrams(version):
             for s_tuple in itertools.permutations(version):
+                # yields of 'people' with various itertools methods:
+                # product: only 1 letter (unless repeats specified)
+                # permutations: 2x as many (p switched)
+                # combinations: only 'people' (no anagrams)
+                # combinations_with_replacement: many extra 'pppppp' etc
                 if self.cancel:
                     return
                 s = ""
                 prev_c = None
                 for c in s_tuple:
-                    c_keep = True
+                    is_c_good = True
                     if c == ' ':
                         if prev_c == ' ':
-                            c_keep = False
-                    if c_keep:
+                            is_c_good = False
+                    if is_c_good:
                         s += c
                     prev_c = c
                 keep = True
@@ -632,6 +702,7 @@ class AnagramGen:
                         if word in s:
                             keep = False
                 found_w = None
+                found_words = None
                 if keep:
                     if check_any:
                         found_words = s.split(" ")
@@ -655,25 +726,36 @@ class AnagramGen:
 
                             if found_w is None:
                                 keep = False
+                    else:
+                        found_words = s.split(" ")
 
                 if keep:
-                    if big_dict.get(s) is True:
-                        # If identical letter is switched, word will
-                        # appear more than once.
-                        continue
-                    big_dict[s] = True
-                    keep_count += 1
+                    # if big_dict.get(s) is True:
+                        # # If identical letter is switched, word will
+                        # # appear more than once (if using
+                        # # itertools.permutations
+                        # continue
+                    # sbig_dict[s] = True
+                    if (prev_result is None) or (prev_result != s):
                     # if found_w is not None:
-                        # print(s + "  #" + found_w)
+                        # print(s + "  # " + found_w)
                     # else:
-                    print(s)
+                        print(s)
+                        keep_count += 1
+                        prev_result = s
+                        # if prev_result is not None:
+                        statusLabel['text'] = ("last: " + prev_result +
+                                               " (see console for all)")
+                else:
+                    # print("# not: '" + s + "'")
+                    pass
 
                 # wait_count += 1
                 # if wait_count >= max_wait_count:
                 if get_second() - prev_time >= max_wait_s:
                     wait_count = 0
                     progress = (float(callback_pb["value"]) /
-                                float(self.total_perms))
+                                float(self.total_permus))
                     remaining = 1.0 - progress
                     passed = get_second() - start_time
                     if progress > 0.0:
@@ -695,6 +777,9 @@ class AnagramGen:
                         passed_h_i = int(passed_h_f)
                         passed_d_f = passed_h_f/24.0
                         passed_d_i = int(passed_d_f)
+                        # prev_msg = ""
+                        # if prev_result is not None:
+                        #     prev_msg = "; recent:" + prev_result
                         prefix = ("#(" + str(keep_count) +
                                   " kept) ETA after " +
                                   str(int(passed)) + "s: ")
@@ -724,7 +809,7 @@ class AnagramGen:
                         etaLabel['text'] = msg
                         prev_passed_h_i = passed_h_i
                         prev_passed_d_i = passed_d_i
-                        eta_number += 1
+                        # eta_number += 1
                     prev_time = get_second()
 
                 callback_pb.step(1)
@@ -736,7 +821,8 @@ class AnagramGen:
             show_overview("done in " +
                           "{0:.2f}".format(self.last_run_s) +
                           "s (checked:" + str(step_count) +
-                          " kept:" + str(keep_count) + ")!")
+                          " kept:" + str(keep_count) + ")!",
+                          bg='palegreen')
 
 if __name__ == "__main__":
     ag = AnagramGen()
@@ -787,11 +873,35 @@ if __name__ == "__main__":
             msgLabel.pack_forget()
         msgLabels = []
 
-    def show_overview(msg):
-        msgLabel = Label(frame, text=msg)
+    def show_overview(msg, bg=None):
+        if bg is not None:
+            msgLabel = Label(frame, text=msg, bg=bg)
+        else:
+            msgLabel = Label(frame, text=msg)
         msgLabel.pack(side=BOTTOM)
         msgLabels.append(msgLabel)
 
+    def spell_click():
+        words_orig = e.get().split(" ")
+        words = []
+        for word in words_orig:
+            if len(word) > 0:
+                words.append(word.lower())
+        result = ""
+        if not ag.fspell.get_is_baked():
+            ag.fspell.bake()
+        if len(words) > 0:
+            for word in words:
+                if ag.fspell.spell(word):
+                    if not ag.is_blocked(word):
+                        show_overview(word + " is in the word list.")
+                    else:
+                        show_overview(word + " is in the word list" +
+                                      " (blocked)")
+                else:
+                    show_overview(word + " is NOT in the word list.")
+        else:
+            etaLabel['text'] = "enter a word or phrase first"
     # frame = Frame(root, highlightbackground="yellow",
     #                    highlightcolor="red", highlightthickness=4,
     #                    width=800, height=600, bd=0)
@@ -804,6 +914,8 @@ if __name__ == "__main__":
     # frame.geometry('800x600')
     etaLabel = Label(frame, text="")
     etaLabel.pack()
+    statusLabel = Label(frame, text="")
+    statusLabel.pack()
     # MOVE window:
     root.geometry("+" + str(int(screen_width/4)) + "+" +
                   str(int(screen_height/4)))
@@ -824,15 +936,16 @@ if __name__ == "__main__":
     # e.delete(0, END)
     # e.insert(END, 'is mud')
     # e.insert(END, 'far flung')
-    # e.insert(END, 'hangry cat')
     # e.insert(END, 'Jake Gustafson')
-    e.insert(END, 'Sheo Epeopl')
+    # e.insert(END, 'Sheo Epeopl')
+    e.insert(END, 'far door')
     e.pack()
 
     allWordsVar = IntVar()
     allWordsCB = Checkbutton(frame, text="All chunks must be words",
                              variable=allWordsVar)
     # .grid(row=0, sticky=W)
+    allWordsVar.set(1)
     allWordsCB.pack()
 
     beginButton = Button(
@@ -840,6 +953,21 @@ if __name__ == "__main__":
         text="Begin",
         command=start_thread)
     beginButton.pack()
+
+    # fakeEntry = Entry(frame)
+    # fakeEntry.pack()
+    spellFakeButton = Button(
+        frame,
+        text="Check Word List",
+        command=spell_click)
+    spellFakeButton.pack()
+
+    clearOutputButton = Button(
+        frame,
+        text="Clear Output",
+        command=remove_overview_labels)
+    clearOutputButton.pack()
+
     stopButton = Button(
         frame,
         text="Stop",
