@@ -608,6 +608,7 @@ class AnagramGen:
             # check_method = self.always_true
 
         show_overview("See console for results.")
+        big_dict = {}
         for version in self.spacings:
             if self.cancel:
                 return
@@ -656,6 +657,11 @@ class AnagramGen:
                                 keep = False
 
                 if keep:
+                    if big_dict.get(s) is True:
+                        # If identical letter is switched, word will
+                        # appear more than once.
+                        continue
+                    big_dict[s] = True
                     keep_count += 1
                     # if found_w is not None:
                         # print(s + "  #" + found_w)
