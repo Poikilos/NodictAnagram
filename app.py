@@ -948,12 +948,6 @@ if __name__ == "__main__":
     allWordsVar.set(1)
     allWordsCB.pack()
 
-    beginButton = Button(
-        frame,
-        text="Begin",
-        command=start_thread)
-    beginButton.pack()
-
     # fakeEntry = Entry(frame)
     # fakeEntry.pack()
     spellFakeButton = Button(
@@ -972,6 +966,13 @@ if __name__ == "__main__":
         frame,
         text="Stop",
         command=stop_thread)
+
+    # pack last since removed and added (to avoid moving)
+    beginButton = Button(
+        frame,
+        text="Begin",
+        command=start_thread)
+    beginButton.pack()
 
 
     root.mainloop()
