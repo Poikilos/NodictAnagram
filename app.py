@@ -543,6 +543,11 @@ class AnagramGen:
         self.cancel = False
         """Start printing anagrams to standard output
 
+        Sequental arguments:
+        callback_pb -- must be a tkinter progress bar
+                       or must have at least ['value'] ['maximum'] and
+                       step(<int>) method
+
         uses:
         self.use_fake_words -- use included list of words and names
         self.use_dictionary -- use hunspell dictionary if available
