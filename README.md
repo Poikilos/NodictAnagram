@@ -9,6 +9,7 @@ A anagram generator (and finder/solver) with some fake words and other weird thi
 ## Licenses
 * Code:
   * see LICENSE
+  * ByteArrayFilter.java by jmhodges (MIT license)
 * Content:
   * hunspell en_US dictionary: custom MIT-style license (see README_en_US.txt)
   * CC0 unless otherwise specified above or in corresponding CREDITS file.

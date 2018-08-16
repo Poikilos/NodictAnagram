@@ -254,6 +254,8 @@ class SpellFake:
         return ret
 
 def anagrams(s):
+    print("ERROR: anagrams generator function is NYI--do not use")
+    sys.exit(1)
     unique = {}
     for c in s:
         if unique.get(c) is not None:
@@ -273,6 +275,10 @@ def anagrams(s):
             count = l[i]['v']
             c = l[i]['k']
             # TODO: not finished yet--dups are always together
+            # to finish this, make a list of letters which have already
+            # been everywhere in the word while a stationary letter
+            # in the outer loop is the same as it, or something like
+            # that. My logic on that idea is incomplete.
             for i in range(count):
                 result += c
         yield result
